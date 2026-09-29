@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Biblioteca Musical</title>
+<style>
+:root{--bg:#fff;--p:#f5f5f7;--p2:#e9e9ee;--t:#1d1d1f;--m:#86868b;--a:#fa243c}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font:14px -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif;display:flex;height:100vh;-webkit-font-smoothing:antialiased}
+nav{width:230px;background:var(--p);border-right:1px solid #0000000f;padding:26px 14px;display:flex;flex-direction:column;gap:2px;flex-shrink:0}
+nav h1{font-size:13px;font-weight:600;color:var(--m);margin:0 0 12px 10px}
+nav a{padding:8px 10px;border-radius:7px;cursor:pointer;color:var(--t);font-size:14px}nav a:hover{background:#0000000a}nav a.on{background:#fa243c1a;color:var(--a);font-weight:600}
+main{flex:1;overflow:auto;padding:36px 44px}h2{font-size:34px;font-weight:700;letter-spacing:-.6px;margin:0 0 22px}h3{font-size:20px;font-weight:700;letter-spacing:-.3px;margin:34px 0 12px;padding-top:14px;border-top:1px solid var(--p2)}
+input,select,textarea,button{font:inherit;color:var(--t);background:var(--p);border:1px solid #0000000f;border-radius:8px;padding:8px 12px;outline:0}
+input:focus,textarea:focus,select:focus{border-color:var(--a);box-shadow:0 0 0 3px #fa243c22}
+button{cursor:pointer}button.pri{background:var(--a);color:#fff;border-color:var(--a);font-weight:600}button:hover{filter:brightness(.96)}
+.bar{display:flex;gap:10px;margin-bottom:24px;flex-wrap:wrap;align-items:center}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:28px 22px}
+.card{cursor:pointer}.card img,.ph{width:100%;aspect-ratio:1;border-radius:8px;object-fit:cover;background:var(--p2);display:block;box-shadow:0 4px 14px #00000026,0 0 0 1px #0000000d;transition:.2s}
+.card:hover img{transform:translateY(-3px);box-shadow:0 10px 24px #00000033}.card b{display:block;margin-top:10px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card span{color:var(--m);font-size:13px}.nt{float:right;color:var(--a);font-weight:600;font-style:normal}
+.chip{display:inline-block;padding:4px 12px;margin:3px 4px 3px 0;border-radius:99px;font-size:12px;cursor:pointer;border:1.5px solid var(--c);color:var(--c);background:#fff;font-weight:500}
+.chip.on{background:var(--c);color:#fff}
+.modal{position:fixed;inset:0;background:#0000004d;backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:9}
+.box{background:#fff;border-radius:16px;width:860px;max-height:90vh;overflow:auto;padding:30px;display:grid;grid-template-columns:270px 1fr;gap:28px;box-shadow:0 24px 60px #00000040}
+.box img{width:100%;border-radius:10px;box-shadow:0 8px 24px #00000030;margin-bottom:14px}.x{position:absolute;right:20px;top:14px;font-size:24px;cursor:pointer;color:var(--m)}
+.row{padding:10px 0;border-bottom:1px solid var(--p2)}.sm{color:var(--m);font-size:13px}
+.ficha{background:var(--p);border-radius:12px;padding:18px 20px;margin-bottom:12px}.ficha p{margin:6px 0 12px;line-height:1.55;color:#3a3a3c}
+.ficha a{color:var(--a);text-decoration:none;margin-right:14px;font-size:12px}.ficha a:hover{text-decoration:underline}
+.marco{display:inline-block;background:var(--p);border-radius:10px;padding:10px 14px;margin:0 8px 8px 0;cursor:pointer}
+.marco:hover{background:var(--p2)}
+</style></head><body>
+<nav><h1>Biblioteca Musical</h1>
+<a data-v="lib">Biblioteca</a><a data-v="add">Buscar álbum</a><a data-v="now">O que ouvir agora</a><a data-v="rnb">Gênero: R&amp;B</a><a data-v="cfg">Moods e backup</a></nav>
+<main id="m"></main><div id="md"></div>
+<script>
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const COLORS=['#ff6b81','#5dade2','#f4d03f','#58d68d','#af7ac5','#eb984e','#45b39d','#ec7063','#85929e'];
+const SUG=['Melancólico','Nostálgico','Energético','Sombrio','Contemplativo','Eufórico','Sensual','Romântico','Noturno','Introspectivo'];
+let DB={albums:{},moods:SUG.map((n,i)=>({n,c:COLORS[i%9],fixed:true}))},view='lib',openId=null,draft={n:7,m:[],t:''},fh=null,q='',fm='',fs='',res=[],nowMood='',note='';
+// ---------- storage (IndexedDB + pasta) ----------
+const idb=()=>new Promise((ok,no)=>{const r=indexedDB.open('bm',1);r.onupgradeneeded=()=>r.result.createObjectStore('k');r.onsuccess=()=>ok(r.result);r.onerror=no});
+const kget=async k=>{const d=await idb();return new Promise(ok=>{const r=d.transaction('k').objectStore('k').get(k);r.onsuccess=()=>ok(r.result);r.onerror=()=>ok()})};
+const kset=async(k,v)=>{const d=await idb();return new Promise(ok=>{const t=d.transaction('k','readwrite');t.objectStore('k').put(v,k);t.oncomplete=ok})};
+async function save(){await kset('db',DB);if(fh){try{const w=await fh.createWritable();await w.write(JSON.stringify(DB,null,1));await w.close();note=''}catch(e){note='Backup na pasta precisa de reautorização (aba Moods e backup).'}}}
+async function init(){const d=await kget('db');if(d)DB=d;const h=await kget('fh');if(h){fh=h;if(await h.queryPermission({mode:'readwrite'})!=='granted'){note='Backup na pasta precisa de reautorização (aba Moods e backup).';fh=null;window._fh=h}}
+ try{navigator.storage?.persist?.()}catch(e){}render()}
+async function pickFolder(){try{const dir=await showDirectoryPicker({mode:'readwrite'});const f=await dir.getFileHandle('biblioteca-musical.json',{create:true});
+ const txt=await(await f.getFile()).text();if(txt.trim()&&confirm('Já existe um backup nesta pasta. Carregar ele (OK) ou sobrescrever com os dados atuais (Cancelar)?')){DB=JSON.parse(txt)}
+ fh=f;await kset('fh',f);await save();render()}catch(e){alert('Seleção cancelada ou não suportada (use Chrome/Edge).')}}
+async function reauth(){const h=window._fh;if(h&&await h.requestPermission({mode:'readwrite'})==='granted'){fh=h;await save();render()}}
+function exportJ(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(DB,null,1)],{type:'application/json'}));a.download='biblioteca-musical.json';a.click()}
+function importJ(e){const r=new FileReader();r.onload=()=>{try{DB=JSON.parse(r.result);save();render()}catch(x){alert('Arquivo inválido')}};r.readAsText(e.target.files[0])}
+// ---------- helpers ----------
+const cur=a=>a.plays.length?[...a.plays].sort((x,y)=>x.d<y.d?-1:1).pop():null;
+const moodOf=n=>DB.moods.find(m=>m.n===n)||{n,c:'#9a9aa0'};
+const chip=(n,on,fn)=>`<span class="chip ${on?'on':''}" style="--c:${moodOf(n).c}" onclick="${fn}">${esc(n)}</span>`;
+const allMoods=a=>[...new Set([...(a.moods||[]),...(cur(a)?.m||[])])];
+const today=()=>new Date().toISOString().slice(0,10);
+const art=u=>u?u.replace(/\d+x\d+bb/,'600x600bb'):'';
+// JSONP: evita bloqueios de CORS da API do iTunes, funciona até abrindo o arquivo local (file://)
+let _jsonpN=0;
+function jsonp(url){return new Promise((resolve,reject)=>{const cb='_cb'+(_jsonpN++);const s=document.createElement('script');
+ const t=setTimeout(()=>{clean();reject(new Error('tempo esgotado ao contatar a iTunes API'))},10000);
+ function clean(){delete window[cb];s.remove();clearTimeout(t)}
+ window[cb]=d=>{clean();resolve(d)};s.onerror=()=>{clean();reject(new Error('não foi possível carregar a iTunes API (sem internet?)'))};
+ s.src=url+(url.includes('?')?'&':'?')+'callback='+cb;document.head.appendChild(s)})}
+// ---------- render ----------
+document.querySelectorAll('nav a').forEach(a=>a.onclick=()=>{view=a.dataset.v;render()});
+function render(){document.querySelectorAll('nav a').forEach(a=>a.classList.toggle('on',a.dataset.v===view));
+ const f={lib:vLib,add:vAdd,now:vNow,rnb:vRnb,cfg:vCfg}[view];$('#m').innerHTML=(note?`<p class="sm" style="color:#b25e00">⚠ ${note}</p>`:'')+f();if(openId)modal()}
+function cardHTML(a){const c=cur(a);return`<div class="card" onclick="openA('${a.id}')">${a.art?`<img src="${art(a.art)}">`:'<div class="ph"></div>'}<b>${c?`<i class="nt">${c.n}</i>`:''}${esc(a.name)}</b><span>${esc(a.artist)} · ${a.year||''}</span></div>`}
+function vLib(){let L=Object.values(DB.albums);if(q)L=L.filter(a=>(a.name+a.artist).toLowerCase().includes(q.toLowerCase()));
+ if(fm)L=L.filter(a=>allMoods(a).includes(fm));if(fs)L=L.filter(a=>a.status===fs);L.sort((a,b)=>(b.added||0)-(a.added||0));
+ return`<h2>Biblioteca</h2><div class="bar"><input placeholder="Filtrar…" value="${esc(q)}" oninput="q=this.value;render();document.querySelector('.bar input').focus()">
+ <select onchange="fm=this.value;render()"><option value="">Todos os moods</option>${DB.moods.map(m=>`<option ${fm===m.n?'selected':''}>${esc(m.n)}</option>`)}</select>
+ <select onchange="fs=this.value;render()"><option value="">Todos os status</option>${['quero ouvir','ouvindo','ouvido','favorito','abandonado'].map(s=>`<option ${fs===s?'selected':''}>${s}</option>`)}</select></div>
+ ${L.length?`<div class="grid">${L.map(cardHTML).join('')}</div>`:'<p class="sm">Nenhum álbum ainda. Vá em “Buscar álbum”.</p>'}`}
+function vAdd(){return`<h2>Buscar álbum</h2><div class="bar"><input id="sq" placeholder="Artista ou álbum" value="${esc(q)}" onkeydown="if(event.key==='Enter')search()" style="width:320px"><button class="pri" onclick="search()">Buscar</button></div>
+ <div class="grid">${res.map(r=>`<div class="card" onclick="addA(${r.collectionId})"><img src="${art(r.artworkUrl100)}"><b>${esc(r.collectionName)}</b><span>${esc(r.artistName)} · ${(r.releaseDate||'').slice(0,4)}</span>${DB.albums[r.collectionId]?'<span> ✓ na biblioteca</span>':''}</div>`).join('')}</div>
+ <h3>Ou cole o link do álbum</h3><p class="sm">Copie o link da página do álbum no app ou site do Apple Music e cole aqui.</p>
+ <div class="bar"><input id="au" placeholder="https://music.apple.com/br/album/…" onkeydown="if(event.key==='Enter')addByUrl()" style="width:420px"><button class="pri" onclick="addByUrl()">Adicionar por link</button></div>`}
+function parseAppleUrl(u){const m=(u||'').split('?')[0].match(/(\d{5,})\/?$/);return m?m[1]:null}
+async function addByUrl(){const u=$('#au').value.trim();if(!u)return;const id=parseAppleUrl(u);
+ if(!id){alert('Não consegui reconhecer esse link. Copie o link da página do álbum no Apple Music (ex.: https://music.apple.com/br/album/nome/123456789).');return}
+ if(DB.albums[id])return openA(id);
+ view='add';$('#m').innerHTML='<h2>Adicionando…</h2>';
+ try{const meta=await jsonp('https://itunes.apple.com/lookup?id='+id);
+  const r=(meta.results||[]).find(x=>x.wrapperType==='collection')||meta.results?.[0];
+  if(!r)throw new Error('álbum não encontrado para esse link');
+  let tracks=[];try{const j=await jsonp('https://itunes.apple.com/lookup?entity=song&id='+id);tracks=j.results.filter(x=>x.wrapperType==='track').map(x=>x.trackName)}catch(e){}
+  DB.albums[id]={id:String(id),name:r.collectionName,artist:r.artistName,year:(r.releaseDate||'').slice(0,4),genre:r.primaryGenreName,art:r.artworkUrl100,url:r.collectionViewUrl,tracks,status:'quero ouvir',moods:[],plays:[],added:Date.now()};
+  await save();openA(String(id))}
+ catch(e){render();$('#m').insertAdjacentHTML('beforeend',`<p class="sm" style="color:#b25e00">Não consegui adicionar por esse link: ${esc(e.message)}.</p>`)}}
+async function search(t){q=t||$('#sq').value;if(!q.trim())return;view='add';$('#m').innerHTML='<h2>Buscando…</h2>';
+ try{const d=await jsonp('https://itunes.apple.com/search?entity=album&limit=24&term='+encodeURIComponent(q));res=d.results||[]}
+ catch(e){res=[];render();$('#m').insertAdjacentHTML('beforeend',`<p class="sm" style="color:#b25e00">Não consegui buscar: ${esc(e.message)}. Verifique sua internet e tente de novo.</p>`);return}
+ render()}
+async function addA(id){if(DB.albums[id])return openA(id);const r=res.find(x=>x.collectionId===id);let tracks=[];
+ try{const j=await jsonp('https://itunes.apple.com/lookup?entity=song&id='+id);tracks=j.results.filter(x=>x.wrapperType==='track').map(x=>x.trackName)}catch(e){}
+ DB.albums[id]={id:String(id),name:r.collectionName,artist:r.artistName,year:(r.releaseDate||'').slice(0,4),genre:r.primaryGenreName,art:r.artworkUrl100,url:r.collectionViewUrl,tracks,status:'quero ouvir',moods:[],plays:[],added:Date.now()};
+ await save();openA(String(id))}
+function vNow(){const L=Object.values(DB.albums).filter(a=>!nowMood||allMoods(a).includes(nowMood));
+ const fila=L.filter(a=>a.status==='quero ouvir'||!a.plays.length),re=L.filter(a=>a.plays.length).sort((a,b)=>cur(a).d<cur(b).d?-1:1);
+ return`<h2>O que ouvir agora</h2><p class="sm">Escolha o mood do momento:</p><div>${DB.moods.map(m=>chip(m.n,nowMood===m.n,`nowMood=nowMood==='${m.n.replace(/'/g,"\\'")}'?'':'${m.n.replace(/'/g,"\\'")}';render()`)).join('')}</div>
+ <h3>Da sua fila</h3>${fila.length?`<div class="grid">${fila.map(cardHTML).join('')}</div>`:'<p class="sm">Nada na fila com esse mood.</p>'}
+ <h3>Para reescutar <span class="sm">(mais tempo sem ouvir primeiro)</span></h3>${re.length?`<div class="grid">${re.map(cardHTML).join('')}</div>`:'<p class="sm">Nenhuma audição registrada com esse mood.</p>'}`}
+// ---------- modal ----------
+function openA(id){openId=id;draft={n:7,m:[],t:''};modal()}
+function modal(){const a=DB.albums[openId];if(!a){openId=null;$('#md').innerHTML='';return}const c=cur(a),ps=[...a.plays].sort((x,y)=>x.d<y.d?-1:1);
+ const pts=ps.map((p,i)=>`${ps.length>1?i*180/(ps.length-1):90},${50-p.n*5}`).join(' ');
+ $('#md').innerHTML=`<div class="modal" onclick="if(event.target===this)closeA()"><div class="box" style="position:relative"><span class="x" onclick="closeA()">×</span>
+ <div>${a.art?`<img src="${art(a.art)}">`:''}<p><button class="pri" style="width:100%" onclick="location.href='${esc((a.url||'').replace(/^https?:/,'music:'))}'">▶ Ouvir no Apple Music</button></p>
+ <select style="width:100%" onchange="setS(this.value)">${['quero ouvir','ouvindo','ouvido','favorito','abandonado'].map(s=>`<option ${a.status===s?'selected':''}>${s}</option>`)}</select>
+ <p class="sm">Moods do álbum</p>${moodPick(a.moods,'togA')}<p><button onclick="delA()" style="font-size:12px">Remover álbum</button></p></div>
+ <div><h2 style="margin:0">${esc(a.name)}</h2><p class="sm">${esc(a.artist)} · ${a.year} · ${esc(a.genre||'')}</p>
+ <p>Nota atual: <b style="font-size:28px;color:var(--a)">${c?c.n:'—'}</b> <span class="sm">${c?'(audição de '+c.d+')':''}</span></p>
+ ${ps.length>1?`<svg width="200" height="56" viewBox="-5 -3 190 56"><polyline points="${pts}" fill="none" stroke="#fa2d48" stroke-width="2"/></svg>`:''}
+ <h3>Nova audição</h3><div class="bar"><input type="date" value="${draft.d||today()}" onchange="draft.d=this.value"><span>Nota <input type="number" min="0" max="10" step="0.5" value="${draft.n}" style="width:70px" onchange="draft.n=+this.value"></span></div>
+ ${moodPick(draft.m,'togD')}<textarea placeholder="Como soou dessa vez?" style="width:100%;margin:8px 0" onchange="draft.t=this.value">${esc(draft.t)}</textarea><button class="pri" onclick="addPlay()">Registrar audição</button>
+ <h3>Histórico</h3>${[...ps].reverse().map(p=>`<div class="row"><b>${p.n}</b> · ${p.d} ${(p.m||[]).map(x=>chip(x,1,'')).join('')}<br><span class="sm">${esc(p.t)}</span></div>`).join('')||'<p class="sm">Sem audições.</p>'}
+ <h3>Faixas</h3>${a.tracks.map((t,i)=>`<div class="row">${i+1}. ${esc(t)}</div>`).join('')||'<p class="sm">—</p>'}</div></div></div>`}
+function moodPick(sel,fn){return DB.moods.map(m=>chip(m.n,(sel||[]).includes(m.n),`${fn}(${JSON.stringify(m.n).replace(/"/g,'&quot;')})`)).join('')+`<span class="chip" style="--c:#9a9aa0" onclick="newMood('${fn}')">+ novo mood</span>`}
+function newMood(fn){const n=(prompt('Nome do novo mood:')||'').trim();if(!n)return;if(!DB.moods.find(m=>m.n===n))DB.moods.push({n,c:COLORS[DB.moods.length%9],fixed:false});window[fn](n)}
+function togA(n){const a=DB.albums[openId];a.moods=tg(a.moods,n);save();modal()}
+function togD(n){draft.m=tg(draft.m,n);modal()}
+const tg=(l,n)=>(l||[]).includes(n)?l.filter(x=>x!==n):[...(l||[]),n];
+function setS(s){DB.albums[openId].status=s;save()}
+function addPlay(){const a=DB.albums[openId];a.plays.push({d:draft.d||today(),n:draft.n,m:draft.m,t:draft.t});if(a.status==='quero ouvir')a.status='ouvido';draft={n:7,m:[],t:''};save();modal();render()}
+function delA(){if(confirm('Remover este álbum e suas audições?')){delete DB.albums[openId];save();closeA()}}
+function closeA(){openId=null;$('#md').innerHTML='';render()}
+// ---------- R&B (conteúdo pesquisado em 28/09/2026; paráfrases com fonte) ----------
+const S={ch:['Carnegie Hall — Timeline of African American Music','https://timeline.carnegiehall.org/genres/rb'],mc:['MasterClass — New Jack Swing','https://www.masterclass.com/articles/new-jack-swing'],
+wk:['Wikipedia — New jack swing','https://en.wikipedia.org/wiki/New_jack_swing'],bp:['The Blues Project — Guide to contemporary R&B and soul','https://thebluesproject.co/2023/05/essential-guide-contemporary-rnb-soul-music/'],
+ud:['uDiscoverMusic — Voodoo','https://www.udiscovermusic.com/stories/rediscover-voodoo/'],qb:['Qobuz — D\'Angelo (bio)','https://www.qobuz.com/us-en/interpreter/d-angelo/42620'],
+rg:['The Ringer — Voodoo, 20 anos','https://www.theringer.com/music/2020/1/24/21079786/dangelo-voodoo-20-year-anniversary-untitled'],sp:['SPIN — Trend of the Year: Alt R&B (2012)','https://www.spin.com/2012/12/trend-of-the-year-alt-rb-2012-frank-ocean-weeknd-miguel/3/'],
+sh:['Shifter — R&B isn\'t dead','https://shiftermagazine.com/music/rb-isnt-dead'],ya:['YAMS — The Rise of ALT&B','https://www.yamstheplaylist.com/p/the-rise-of-alt-and-b'],pi:['Pirate — The Rise of Alternative R&B','https://pirate.com/en/blog/news/the-rise-of-alt-rnb/']};
+const FICHAS=[
+['Funk e disco (60s–70s)','Funk como ramificação do R&B','Segundo o guia da The Blues Project, “Cold Sweat”, de James Brown, abriu uma nova fase do R&B via funk, com Sly & the Family Stone e Parliament-Funkadelic em seguida. O funk seguiria sendo muito sampleado no hip-hop. O disco, mistura de R&B, funk e eletrônica, dividiu opiniões: para uns era raso e comercial, mas teve grande impacto.',['bp']],
+['Marco terminológico (1990)','Billboard adota “R&B”','O projeto da Carnegie Hall registra que a Billboard escolheu “R&B” em 1990 para substituir o antigo rótulo “Black music”, num contexto em que o rótulo racial vinha sendo questionado. O texto descreve o termo como um rótulo de mercado para um estilo híbrido, e cita “Nasty” (1986), de Janet Jackson, com produção de Jimmy Jam e Terry Lewis.',['ch']],
+['New jack swing (1986–1993)','Teddy Riley e o nascimento do new jack swing','A MasterClass conta que o jornalista Barry Michael Cooper cunhou o termo em 1987, num perfil de Teddy Riley no Village Voice. O som se apoia em samples de funk/soul, rap, bateria de TR-808 e mixagem com SP-1200.',['mc']],
+['New jack swing (1986–1993)','Divergência: quem “inventou”?','A Wikipedia cita o pesquisador Ripani, que vê “Control” (1986), de Janet Jackson com Jam & Lewis, como um dos primeiros sucessos a fundir R&B, rap e percussão sintetizada, influenciando Riley. Já a MasterClass associa o gênero principalmente a Riley. As fontes concordam no período, mas divergem no crédito.',['wk','mc']],
+['R&B dos anos 90','Hip-hop soul e o R&B mainstream','Para a The Blues Project, o sucesso do new jack swing levou a um R&B dos 90s ancorado na produção hip-hop, com TLC, o selo Bad Boy, Faith Evans, 112 e Mary J. Blige. “Hip-hop soul” era o termo original para esse som.',['bp']],
+['Neo-soul (1995–2000)','Brown Sugar abre caminho','A uDiscoverMusic afirma que o debut de D\'Angelo (1995) abriu caminho para Maxwell (“Urban Hang Suite”), Erykah Badu (“Baduizm”), Lauryn Hill e o neo-soul. A The Blues Project destaca “The Miseducation of Lauryn Hill” como a obra que popularizou o gênero.',['ud','bp']],
+['Neo-soul (1995–2000)','Divergência: recepção e rótulo','A The Ringer lembra que o neo-soul é um termo criado para vender artistas de R&B e hip-hop com estética de soul clássico e jazz, e que a Rolling Stone, na época de “Brown Sugar”, o achou pouco pioneiro. A uDiscoverMusic, em retrospecto, o trata como fundador do movimento.',['rg','ud']],
+['Neo-soul (1995–2000)','Voodoo e os Soulquarians','Segundo a uDiscoverMusic, “Voodoo” (2000) foi uma reação ao R&B liso e de clube da época, resgatando a produção terrosa dos anos 70 com ritmos influenciados pelo hip-hop. A Qobuz registra que foi gravado ao mesmo tempo que “Mama\'s Gun” (Badu) e “Like Water for Chocolate” (Common), com equipe em comum (?uestlove, J Dilla, James Poyser), chamada de Soulquarians.',['ud','qb']],
+['Alt R&B (2010s)','A internet muda o jogo','A YAMS descreve o R&B independente dos anos 2010 como impulsionado por mixtapes caseiras e distribuição online. “House of Balloons” (2011), do The Weeknd, saiu de graça no site dele. Frank Ocean trouxe influências de rock (Eagles, Radiohead) para o R&B.',['ya']],
+['Alt R&B (2010s)','Um novo tom no gênero','A SPIN (2012) já tratava o “alt R&B” como tendência do ano, com Frank Ocean, The Weeknd, Miguel e Solange, e apontava o interesse de produtores britânicos de bass music pelo R&B americano. A Shifter vê em Ocean a juventude que faltava e a abertura para falar de temas como solidão e amor não correspondido.',['sp','sh']],
+['Alt R&B (2010s)','A Seat at the Table (2016)','A Pirate descreve o álbum de Solange como uma virada em relação ao pop com toques de Motown do disco anterior, misturando funk, neo-soul e um R&B bem enxuto, com temas de dor e afirmação da identidade negra.',['pi']]];
+const MARCOS=[['Control','Janet Jackson','1986'],['Dangerous','Michael Jackson','1991'],['Brown Sugar','D\'Angelo','1995'],['The Miseducation of Lauryn Hill','Lauryn Hill','1998'],['Voodoo','D\'Angelo','2000'],['House of Balloons','The Weeknd','2011'],['A Seat at the Table','Solange','2016']];
+function vRnb(){const eras=[...new Set(FICHAS.map(f=>f[0]))];const mine=Object.values(DB.albums).filter(a=>/r&b|soul/i.test(a.genre||''));
+ return`<h2>R&amp;B — uma história em fichas</h2><p class="sm">Resumos em minhas palavras, cada um com link para a fonte. Consultadas em 28/09/2026. Onde as fontes divergem, aparecem lado a lado.</p>
+ <h3>Álbuns-marco <span class="sm">(clique para buscar e adicionar)</span></h3>${MARCOS.map(m=>`<span class="marco" onclick="view='add';search('${m[0].replace(/'/g,"\\'")} ${m[1].replace(/'/g,"\\'")}')"><b>${esc(m[0])}</b><br><span class="sm">${esc(m[1])} · ${m[2]}</span></span>`).join('')}
+ <h3>Seus álbuns de R&amp;B/Soul</h3>${mine.length?`<div class="grid">${mine.map(cardHTML).join('')}</div>`:'<p class="sm">Ainda nenhum álbum com gênero R&B/Soul na biblioteca.</p>'}
+ ${eras.map(e=>`<h3>${e}</h3>`+FICHAS.filter(f=>f[0]===e).map(f=>`<div class="ficha"><b>${f[1]}</b><p>${f[2]}</p>${f[3].map(k=>`<a href="${S[k][1]}" target="_blank" rel="noopener">↗ ${S[k][0]}</a>`).join('')}</div>`).join('')).join('')}`}
+// ---------- config ----------
+function vCfg(){return`<h2>Moods e backup</h2><h3>Moods</h3><p class="sm">Livres nascem sem fixar. Clique em “fixar” para promover à lista fixa.</p>
+ ${DB.moods.map((m,i)=>`<div class="row"><input type="color" value="${m.c}" onchange="DB.moods[${i}].c=this.value;save();render()" style="padding:0;width:34px;height:26px"> ${chip(m.n,1,'')} <span class="sm">${m.fixed?'fixo':'livre'}</span> ${m.fixed?'':`<button onclick="DB.moods[${i}].fixed=true;save();render()">fixar</button>`}</div>`).join('')}
+ <h3>Backup</h3><p class="sm">${fh?'✓ Salvando automaticamente na pasta escolhida.':'Escolha uma subpasta (ex.: dentro do iCloud Drive) para salvar automaticamente. Se já existe backup, ele pode ser carregado.'}</p>
+ <div class="bar"><button class="pri" onclick="pickFolder()">Selecionar pasta</button>${window._fh&&!fh?'<button onclick="reauth()">Reautorizar pasta</button>':''}<button onclick="exportJ()">Exportar JSON</button><label><button onclick="this.nextElementSibling.click()">Importar JSON</button><input type="file" accept=".json" hidden onchange="importJ(event)"></label></div>`}
+init();
+</script></body></html>
